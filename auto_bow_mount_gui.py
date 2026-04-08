@@ -19,8 +19,8 @@ AUTHOR_TEXT = "@f"
 GITHUB_TEXT = "github: https://github.com/futuer-szd"
 DISCLAIMER_TEXT = "免责声明：本脚本仅供研究学习，使用后果自负。"
 USAGE_RULES_TEXT = (
-    "使用规则：首先队友放出6叶，主控将同乘放在背包1，然后同乘。按P打开背包切换到6叶背包2，"
-    "放出6叶。最后按P打开背包切换到6爱分享背包3。提示：嘴越大的叶产花效率越高。"
+    "使用规则：首先队友放出6叶，主控将同乘放在背包1，然后同乘。按P打开背包切换到6爱分享叶背包2，"
+    "放出6叶。提示：嘴越大的叶产花效率越高。"
     "本策略有其局限性：相机只影响自己放出来的叶，如果有必要，可以建议队友也开一个脚本。"
     "优势：不要求主控拥有5爱分享笑脸叶。"
 )
@@ -172,7 +172,7 @@ def get_app_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
-CONFIG_PATH = get_app_dir() / "auto_bow_mount_config.json"
+CONFIG_PATH = get_app_dir() / "auto_camera_toggle_config.json"
 
 
 def format_number(value: float | int) -> str:
@@ -350,9 +350,8 @@ class AutomationRunner:
                     self.log(f"执行第 {small_index}/{self.config.small_cycle_count} 次小循环。")
                     if not self._run_small_cycle():
                         return
-                    if small_index < self.config.small_cycle_count:
-                        if not self._delay_with_jitter(self.config.between_small_cycles_delay):
-                            return
+                    if not self._delay_with_jitter(self.config.between_small_cycles_delay):
+                        return
 
                 if not self._delay_with_jitter(self.config.between_big_cycles_wait):
                     return
