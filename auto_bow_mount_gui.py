@@ -7,58 +7,44 @@ import threading
 import time
 from ctypes import wintypes
 from dataclasses import dataclass
-from datetime import datetime, time as dt_time
+from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
 
 
-APP_TITLE = "自动鞠躬骑乘"
+APP_TITLE = "自动开关相机"
 # Author marker: @f
 AUTHOR_TEXT = "@f"
 GITHUB_TEXT = "github: https://github.com/futuer-szd"
 DISCLAIMER_TEXT = "免责声明：本脚本仅供研究学习，使用后果自负。"
+USAGE_RULES_TEXT = (
+    "使用规则：首先队友放出6叶，主控将同乘放在背包1，然后同乘。按P打开背包切换到6叶背包2，"
+    "放出6叶。最后按P打开背包切换到6爱分享背包3。提示：嘴越大的叶产花效率越高。"
+    "本策略有其局限性：相机只影响自己放出来的叶，如果有必要，可以建议队友也开一个脚本。"
+    "优势：不要求主控拥有5爱分享笑脸叶。"
+)
 
 KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_SCANCODE = 0x0008
-INPUT_MOUSE = 0
 INPUT_KEYBOARD = 1
 MAPVK_VK_TO_VSC = 0
-MOUSEEVENTF_LEFTDOWN = 0x0002
-MOUSEEVENTF_LEFTUP = 0x0004
 
 VK_CODE_MAP = {
-    "TAB": 0x09,
-    "ESC": 0x1B,
-    "R": 0x52,
-    "0": 0x30,
-    "1": 0x31,
-    "2": 0x32,
-    "3": 0x33,
-    "4": 0x34,
-    "5": 0x35,
-    "6": 0x36,
-    "7": 0x37,
-    "8": 0x38,
-    "9": 0x39,
+    "I": 0x49,
 }
 
 EXTENDED_KEY_VKS = set()
 
 DEFAULT_CONFIG = {
     "first_loop_delay": 2.0,
-    "tab_delay": 1.0,
-    "bow_key_delay": 1.0,
-    "before_mount_delay": 2.0,
-    "ride_duration": 12.0,
-    "between_small_cycles_delay": 3.0,
+    "camera_open_delay": 2.0,
+    "between_small_cycles_delay": 12.0,
     "between_big_cycles_wait": 2.0,
-    "jitter_min_ms": 1000,
-    "jitter_max_ms": 2500,
-    "salute_key": "2",
+    "jitter_min_ms": 200,
+    "jitter_max_ms": 1000,
     "small_cycle_count": 10,
-    "enable_daily_skip": False,
 }
 
 ENTRY_BG = "#ffffff"
@@ -119,37 +105,25 @@ class INPUT(ctypes.Structure):
 @dataclass
 class ScriptConfig:
     first_loop_delay: float
-    tab_delay: float
-    bow_key_delay: float
-    before_mount_delay: float
-    ride_duration: float
+    camera_open_delay: float
     between_small_cycles_delay: float
     between_big_cycles_wait: float
     jitter_min_ms: int
     jitter_max_ms: int
-    salute_key: str
     small_cycle_count: int
-    enable_daily_skip: bool
 
     @classmethod
     def from_dict(cls, data: dict) -> "ScriptConfig":
         merged = DEFAULT_CONFIG | data
         config = cls(
             first_loop_delay=max(0.0, float(merged["first_loop_delay"])),
-            tab_delay=max(0.0, float(merged["tab_delay"])),
-            bow_key_delay=max(0.0, float(merged["bow_key_delay"])),
-            before_mount_delay=max(0.0, float(merged["before_mount_delay"])),
-            ride_duration=max(0.0, float(merged["ride_duration"])),
+            camera_open_delay=max(0.0, float(merged["camera_open_delay"])),
             between_small_cycles_delay=max(0.0, float(merged["between_small_cycles_delay"])),
             between_big_cycles_wait=max(0.0, float(merged["between_big_cycles_wait"])),
             jitter_min_ms=max(0, int(merged["jitter_min_ms"])),
             jitter_max_ms=max(0, int(merged["jitter_max_ms"])),
-            salute_key=str(merged["salute_key"]),
             small_cycle_count=max(1, int(merged["small_cycle_count"])),
-            enable_daily_skip=bool(merged["enable_daily_skip"]),
         )
-        if config.salute_key not in "0123456789":
-            config.salute_key = "2"
         if config.jitter_min_ms > config.jitter_max_ms:
             config.jitter_min_ms, config.jitter_max_ms = config.jitter_max_ms, config.jitter_min_ms
         return config
@@ -157,17 +131,12 @@ class ScriptConfig:
     def to_dict(self) -> dict:
         return {
             "first_loop_delay": self.first_loop_delay,
-            "tab_delay": self.tab_delay,
-            "bow_key_delay": self.bow_key_delay,
-            "before_mount_delay": self.before_mount_delay,
-            "ride_duration": self.ride_duration,
+            "camera_open_delay": self.camera_open_delay,
             "between_small_cycles_delay": self.between_small_cycles_delay,
             "between_big_cycles_wait": self.between_big_cycles_wait,
             "jitter_min_ms": self.jitter_min_ms,
             "jitter_max_ms": self.jitter_max_ms,
-            "salute_key": self.salute_key,
             "small_cycle_count": self.small_cycle_count,
-            "enable_daily_skip": self.enable_daily_skip,
         }
 
 
@@ -246,14 +215,6 @@ def press_virtual_key(vk_code: int) -> None:
     _send_input(key_up)
 
 
-def left_click() -> None:
-    mouse_down = INPUT(type=INPUT_MOUSE, union=INPUTUNION(mi=MOUSEINPUT(dwFlags=MOUSEEVENTF_LEFTDOWN)))
-    mouse_up = INPUT(type=INPUT_MOUSE, union=INPUTUNION(mi=MOUSEINPUT(dwFlags=MOUSEEVENTF_LEFTUP)))
-    _send_input(mouse_down)
-    time.sleep(0.03)
-    _send_input(mouse_up)
-
-
 class AutomationRunner:
     def __init__(self, config: ScriptConfig, log_callback, finish_callback, state_callback):
         self.config = config
@@ -264,7 +225,6 @@ class AutomationRunner:
         self.pause_event = threading.Event()
         self.pause_event.set()
         self.thread = threading.Thread(target=self._run, daemon=True)
-        self.last_daily_skip_date = ""
 
     def start(self) -> None:
         self.thread.start()
@@ -322,60 +282,19 @@ class AutomationRunner:
         return True
 
     def _run_small_cycle(self) -> bool:
-        if not self._press("TAB"):
+        if not self._press("I"):
             return False
-        if not self._delay_with_jitter(self.config.tab_delay):
-            return False
-
-        if not self._press(self.config.salute_key):
-            return False
-        if not self._delay_with_jitter(self.config.bow_key_delay):
+        if not self._delay_with_jitter(self.config.camera_open_delay):
             return False
 
-        if not self._press("ESC"):
+        if not self._press("I"):
             return False
-        if not self._delay_with_jitter(self.config.before_mount_delay):
-            return False
-
-        if not self._press("R"):
-            return False
-        if not self._delay_with_jitter(self.config.ride_duration):
-            return False
-
-        if not self._wait_if_paused():
-            return False
-        left_click()
         return True
-
-    def _handle_daily_skip(self) -> bool:
-        if not self.config.enable_daily_skip:
-            return True
-
-        now = datetime.now()
-        today = now.date().isoformat()
-        if self.last_daily_skip_date == today:
-            return True
-        if now.time() < dt_time(3, 58, 0):
-            return True
-
-        self.log("进入月卡跳过时间窗，等待到 04:00:10 后自动点击一次。")
-        while not self.stop_event.is_set():
-            if not self._wait_if_paused():
-                return False
-            now = datetime.now()
-            if now.time() >= dt_time(4, 0, 10):
-                left_click()
-                self.last_daily_skip_date = today
-                self.log("已执行 04:00:10 月卡跳过点击，并额外等待 10 秒。")
-                return self._sleep(10.0)
-            time.sleep(0.5)
-        return False
 
     def _run(self) -> None:
         try:
             self.state_callback("running")
             self.log("脚本已启动，请保持目标窗口在前台。")
-            self.log(f"月卡跳过：{'已开启' if self.config.enable_daily_skip else '未开启'}。")
             if not self._delay_with_jitter(self.config.first_loop_delay):
                 return
 
@@ -385,8 +304,6 @@ class AutomationRunner:
                 self.log(f"开始第 {big_cycle_index} 轮大循环。")
 
                 for small_index in range(1, self.config.small_cycle_count + 1):
-                    if not self._handle_daily_skip():
-                        return
                     self.log(f"执行第 {small_index}/{self.config.small_cycle_count} 次小循环。")
                     if not self._run_small_cycle():
                         return
@@ -433,8 +350,8 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(APP_TITLE)
-        self.root.geometry("860x640")
-        self.root.minsize(800, 600)
+        self.root.geometry("900x760")
+        self.root.minsize(860, 700)
         self.root.configure(bg=WINDOW_BG)
 
         self.runner = None
@@ -442,17 +359,12 @@ class App:
 
         config = load_config()
         self.first_loop_delay_var = tk.StringVar()
-        self.tab_delay_var = tk.StringVar()
-        self.bow_key_delay_var = tk.StringVar()
-        self.before_mount_delay_var = tk.StringVar()
-        self.ride_duration_var = tk.StringVar()
+        self.camera_open_delay_var = tk.StringVar()
         self.between_small_cycles_delay_var = tk.StringVar()
         self.between_big_cycles_wait_var = tk.StringVar()
         self.jitter_min_ms_var = tk.StringVar()
         self.jitter_max_ms_var = tk.StringVar()
-        self.salute_key_var = tk.StringVar()
         self.small_cycle_count_var = tk.StringVar()
-        self.enable_daily_skip_var = tk.BooleanVar(value=False)
         self._set_form_from_config(config)
 
         self._build_styles()
@@ -475,7 +387,7 @@ class App:
 
         title = tk.Label(
             flow_panel,
-            text="---> 鞠躬(Tab ---> 鞠躬 ---> ESC) ---> 骑乘R ---> 退出骑乘左键 ---> 下一次鞠躬",
+            text="---> 打开相机I ---> 关闭相机I --->",
             bg=PANEL_BG,
             fg="#1f1f1f",
             font=("Microsoft YaHei UI", 14, "bold"),
@@ -495,15 +407,13 @@ class App:
 
         flow_fields = [
             ("启动前", self.first_loop_delay_var),
-            ("Tab后", self.tab_delay_var),
-            ("动作后", self.bow_key_delay_var),
-            ("骑乘前", self.before_mount_delay_var),
-            ("骑乘中", self.ride_duration_var),
+            ("打开后", self.camera_open_delay_var),
             ("下次前", self.between_small_cycles_delay_var),
         ]
         for index, (caption, variable) in enumerate(flow_fields):
             field = LabeledEntry(delay_row, caption, variable, width=6)
-            field.frame.pack(side="left", padx=(0, 56 if index < len(flow_fields) - 1 else 0))
+            gap = 160 if index == 0 else 80
+            field.frame.pack(side="left", padx=(0, gap if index < len(flow_fields) - 1 else 0))
 
         info_panel = tk.Frame(container, bg=PANEL_BG, bd=1, relief="solid", padx=14, pady=14)
         info_panel.pack(fill="x", pady=(12, 0))
@@ -513,28 +423,12 @@ class App:
 
         tk.Label(
             top_info,
-            text="动作序号：",
+            text="单次小循环次数：",
             bg=PANEL_BG,
             fg=ACCENT,
             font=("Microsoft YaHei UI", 11, "bold"),
         ).grid(row=0, column=0, sticky="w")
-        action_combo = ttk.Combobox(
-            top_info,
-            textvariable=self.salute_key_var,
-            values=[str(i) for i in range(10)],
-            width=5,
-            state="readonly",
-        )
-        action_combo.grid(row=0, column=1, sticky="w", padx=(6, 20))
-
-        tk.Label(
-            top_info,
-            text="单次小循环鞠躬次数：",
-            bg=PANEL_BG,
-            fg=ACCENT,
-            font=("Microsoft YaHei UI", 11, "bold"),
-        ).grid(row=1, column=0, sticky="w", pady=(16, 0))
-        self._make_compact_entry(top_info, self.small_cycle_count_var, 6).grid(row=1, column=1, sticky="w", padx=(6, 20), pady=(16, 0))
+        self._make_compact_entry(top_info, self.small_cycle_count_var, 6).grid(row=0, column=1, sticky="w", padx=(6, 20))
 
         tk.Label(
             top_info,
@@ -542,18 +436,8 @@ class App:
             bg=PANEL_BG,
             fg=ACCENT,
             font=("Microsoft YaHei UI", 11, "bold"),
-        ).grid(row=2, column=0, sticky="w", pady=(16, 0))
-        self._make_compact_entry(top_info, self.between_big_cycles_wait_var, 6).grid(row=2, column=1, sticky="w", padx=(6, 20), pady=(16, 0))
-
-        skip = tk.Checkbutton(
-            top_info,
-            text="启动4点月卡跳过",
-            variable=self.enable_daily_skip_var,
-            bg=PANEL_BG,
-            activebackground=PANEL_BG,
-            font=("Microsoft YaHei UI", 10),
-        )
-        skip.grid(row=0, column=2, rowspan=2, sticky="w", padx=(40, 0))
+        ).grid(row=1, column=0, sticky="w", pady=(16, 0))
+        self._make_compact_entry(top_info, self.between_big_cycles_wait_var, 6).grid(row=1, column=1, sticky="w", padx=(6, 20), pady=(16, 0))
 
         jitter_panel = tk.Frame(info_panel, bg=PANEL_BG)
         jitter_panel.pack(fill="x", pady=(22, 0))
@@ -601,6 +485,15 @@ class App:
             wraplength=780,
             font=("Microsoft YaHei UI", 9),
         ).pack(side="left")
+        tk.Label(
+            info_panel,
+            text=USAGE_RULES_TEXT,
+            bg=PANEL_BG,
+            fg="#5b5249",
+            justify="left",
+            wraplength=820,
+            font=("Microsoft YaHei UI", 9),
+        ).pack(anchor="w", pady=(12, 0))
         tk.Label(
             info_panel,
             text="请使用管理员模式运行此程序",
@@ -692,32 +585,22 @@ class App:
 
     def _set_form_from_config(self, config: ScriptConfig) -> None:
         self.first_loop_delay_var.set(format_number(config.first_loop_delay))
-        self.tab_delay_var.set(format_number(config.tab_delay))
-        self.bow_key_delay_var.set(format_number(config.bow_key_delay))
-        self.before_mount_delay_var.set(format_number(config.before_mount_delay))
-        self.ride_duration_var.set(format_number(config.ride_duration))
+        self.camera_open_delay_var.set(format_number(config.camera_open_delay))
         self.between_small_cycles_delay_var.set(format_number(config.between_small_cycles_delay))
         self.between_big_cycles_wait_var.set(format_number(config.between_big_cycles_wait))
         self.jitter_min_ms_var.set(str(config.jitter_min_ms))
         self.jitter_max_ms_var.set(str(config.jitter_max_ms))
-        self.salute_key_var.set(config.salute_key)
         self.small_cycle_count_var.set(str(config.small_cycle_count))
-        self.enable_daily_skip_var.set(config.enable_daily_skip)
 
     def _read_config_from_form(self) -> ScriptConfig:
         data = {
             "first_loop_delay": self.first_loop_delay_var.get().strip(),
-            "tab_delay": self.tab_delay_var.get().strip(),
-            "bow_key_delay": self.bow_key_delay_var.get().strip(),
-            "before_mount_delay": self.before_mount_delay_var.get().strip(),
-            "ride_duration": self.ride_duration_var.get().strip(),
+            "camera_open_delay": self.camera_open_delay_var.get().strip(),
             "between_small_cycles_delay": self.between_small_cycles_delay_var.get().strip(),
             "between_big_cycles_wait": self.between_big_cycles_wait_var.get().strip(),
             "jitter_min_ms": self.jitter_min_ms_var.get().strip(),
             "jitter_max_ms": self.jitter_max_ms_var.get().strip(),
-            "salute_key": self.salute_key_var.get().strip(),
             "small_cycle_count": self.small_cycle_count_var.get().strip(),
-            "enable_daily_skip": self.enable_daily_skip_var.get(),
         }
         return ScriptConfig.from_dict(data)
 
@@ -756,7 +639,7 @@ class App:
         except OSError as exc:
             messagebox.showerror(APP_TITLE, f"默认值已恢复，但写入配置失败：{exc}")
             return
-        self.log("已恢复自动鞠躬骑乘.Q 的默认设置，并写入配置文件。")
+        self.log("已恢复自动开关相机的默认设置，并写入配置文件。")
 
     def start_or_resume(self) -> None:
         if self.runner and self.runner.is_alive():
