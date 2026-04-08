@@ -412,7 +412,7 @@ class App:
         ]
         for index, (caption, variable) in enumerate(flow_fields):
             field = LabeledEntry(delay_row, caption, variable, width=6)
-            gap = 160 if index == 0 else 80
+            gap = 120 if index == 0 else 80
             field.frame.pack(side="left", padx=(0, gap if index < len(flow_fields) - 1 else 0))
 
         info_panel = tk.Frame(container, bg=PANEL_BG, bd=1, relief="solid", padx=14, pady=14)
