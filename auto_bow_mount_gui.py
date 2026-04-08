@@ -582,16 +582,25 @@ class App:
             font=("Microsoft YaHei UI", 14, "bold"),
         ).pack(side="left")
 
-        note_text = "说明：每个“延迟(秒)”字段都会额外叠加上方的随机毫秒范围。"
+        note_row = tk.Frame(info_panel, bg=PANEL_BG)
+        note_row.pack(anchor="w", pady=(18, 0))
         tk.Label(
-            info_panel,
-            text=note_text,
+            note_row,
+            text="开源免费",
+            bg=PANEL_BG,
+            fg="#2563eb",
+            justify="left",
+            font=("Microsoft YaHei UI", 9, "bold"),
+        ).pack(side="left")
+        tk.Label(
+            note_row,
+            text=" 说明：每个“延迟(秒)”字段都会额外叠加上方的随机毫秒范围。",
             bg=PANEL_BG,
             fg="#666666",
             justify="left",
             wraplength=780,
             font=("Microsoft YaHei UI", 9),
-        ).pack(anchor="w", pady=(18, 0))
+        ).pack(side="left")
         tk.Label(
             info_panel,
             text="请使用管理员模式运行此程序",
@@ -600,14 +609,6 @@ class App:
             justify="left",
             font=("Microsoft YaHei UI", 10, "bold"),
         ).pack(anchor="w", pady=(6, 0))
-        tk.Label(
-            info_panel,
-            text=DISCLAIMER_TEXT,
-            bg=PANEL_BG,
-            fg="#7a7a7a",
-            justify="left",
-            font=("Microsoft YaHei UI", 9),
-        ).pack(anchor="w", pady=(4, 0))
 
         bottom_bar = tk.Frame(container, bg=WINDOW_BG)
         bottom_bar.pack(fill="x", pady=(12, 0))
