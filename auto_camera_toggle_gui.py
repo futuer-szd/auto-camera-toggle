@@ -358,7 +358,7 @@ class AutomationRunner:
                     self.log(f"执行第 {small_index}/{self.config.small_cycle_count} 次小循环。")
                     if not self._run_small_cycle():
                         return
-                    if small_index < self.config.small_cycle_count and not self._delay_with_jitter(self.config.between_small_cycles_delay):
+                    if not self._delay_with_jitter(self.config.between_small_cycles_delay):
                         return
 
                 if not self._delay_with_jitter(self.config.between_big_cycles_wait):
